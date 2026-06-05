@@ -1,0 +1,13 @@
+# macOS
+.DS_Store
+
+# Editor / tooling
+.vscode/
+.idea/
+.claude/
+
+# Build artifacts
+*.zip
+*.crx
+*.pem
+node_modules/

@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="stylesheet" href="popup.css" />
+    <title>Website Time Tracker</title>
+  </head>
+  <body>
+    <header>
+      <h1>Time Tracker</h1>
+      <select id="day-select" title="Pick a day"></select>
+    </header>
+
+    <div id="total" class="total">—</div>
+
+    <ul id="list" class="list">
+      <li class="empty">No activity recorded yet.</li>
+    </ul>
+
+    <footer>
+      <button id="dashboard" class="primary" title="Open the full dashboard">
+        📊 Open dashboard
+      </button>
+      <button id="reset" class="reset" title="Delete the selected day's data">
+        Reset day
+      </button>
+    </footer>
+
+    <script src="categories.js"></script>
+    <script src="popup.js"></script>
+  </body>
+</html>

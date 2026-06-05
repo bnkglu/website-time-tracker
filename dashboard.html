@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="stylesheet" href="dashboard.css" />
+    <title>Time Tracker — Dashboard</title>
+  </head>
+  <body>
+    <div class="wrap">
+      <header class="topbar">
+        <div class="brand">
+          <img src="icons/icon48.png" alt="" width="28" height="28" />
+          <h1>Time Tracker</h1>
+        </div>
+
+        <div class="controls">
+          <div class="seg" id="period-seg">
+            <button data-period="day" class="active">Day</button>
+            <button data-period="week">Week</button>
+            <button data-period="year">Year</button>
+          </div>
+          <div class="nav">
+            <button id="prev" title="Previous">‹</button>
+            <span id="range-label" class="range-label">—</span>
+            <button id="next" title="Next">›</button>
+            <button id="today-btn" class="today-btn">Today</button>
+          </div>
+        </div>
+      </header>
+
+      <!-- Stat cards -->
+      <section class="cards" id="cards"></section>
+
+      <!-- Charts row -->
+      <section class="grid">
+        <div class="panel">
+          <div class="panel-head">
+            <h2 id="trend-title">Activity</h2>
+            <span class="muted" id="trend-sub"></span>
+          </div>
+          <div class="chart" id="bar-chart"></div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-head"><h2>By category</h2></div>
+          <div class="donut-row">
+            <div class="donut" id="donut"></div>
+            <ul class="legend" id="legend"></ul>
+          </div>
+        </div>
+      </section>
+
+      <!-- Lists row -->
+      <section class="grid">
+        <div class="panel">
+          <div class="panel-head">
+            <h2>Top sites</h2>
+            <span class="muted">click a tag to recategorize</span>
+          </div>
+          <ul class="sites" id="sites"></ul>
+        </div>
+
+        <div class="panel">
+          <div class="panel-head"><h2>Category breakdown</h2></div>
+          <ul class="catlist" id="catlist"></ul>
+        </div>
+      </section>
+
+      <footer class="footer">
+        <span class="muted">All data is stored locally on this device.</span>
+        <button id="export" class="ghost">Export JSON</button>
+        <button id="reset-all" class="danger">Reset all data</button>
+      </footer>
+    </div>
+
+    <script src="categories.js"></script>
+    <script src="dashboard.js"></script>
+  </body>
+</html>
