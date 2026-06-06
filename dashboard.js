@@ -9,6 +9,24 @@ let OVERRIDES = {};   // { host: category }
 let period = "day";   // "day" | "week" | "year"
 let anchor = new Date();
 
+// Interval selection over the trend chart's buckets (inclusive indices).
+let selStart = null;
+let selEnd = null;
+let dragging = false;
+
+// Total seconds per hour for a day, summed across hosts. Handles the new
+// { host: [24] } shape and the legacy bare [24] array.
+function hourlyArray(dayKey) {
+  const h = HOURS[dayKey];
+  const out = new Array(24).fill(0);
+  if (!h) return out;
+  if (Array.isArray(h)) return h.slice();
+  for (const arr of Object.values(h)) {
+    for (let i = 0; i < 24; i++) out[i] += arr[i] || 0;
+  }
+  return out;
+}
+
 // ---- date helpers ----------------------------------------------------------
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
@@ -95,7 +113,7 @@ function aggregate() {
 // Bar-chart buckets depend on the period.
 function buildBuckets(agg) {
   if (period === "day") {
-    const arr = HOURS[keyOf(anchor)] || new Array(24).fill(0);
+    const arr = hourlyArray(keyOf(anchor));
     return arr.map((v, h) => ({
       value: v,
       x: h % 3 === 0 ? `${h}` : "",
@@ -162,7 +180,7 @@ function renderCards(agg) {
 
   if (period === "day") {
     cards.push({ k: "Sites visited", v: String(Object.keys(agg.perHost).length) });
-    const hrs = HOURS[keyOf(anchor)] || [];
+    const hrs = hourlyArray(keyOf(anchor));
     let peak = -1, peakVal = 0;
     hrs.forEach((v, h) => { if (v > peakVal) { peakVal = v; peak = h; } });
     cards.push({ k: "Peak hour", v: peak >= 0 ? `${String(peak).padStart(2, "0")}:00` : "—" });
@@ -206,9 +224,10 @@ function renderBarChart(agg) {
   sub.textContent = `peak ${formatDur(max === 1 && agg.total === 0 ? 0 : max)}`;
 
   el.innerHTML = "";
-  for (const b of buckets) {
+  buckets.forEach((b, i) => {
     const col = document.createElement("div");
     col.className = "bar-col";
+    col.dataset.index = i;
     const bar = document.createElement("div");
     bar.className = "bar";
     bar.style.height = `${(b.value / max) * 100}%`;
@@ -219,7 +238,9 @@ function renderBarChart(agg) {
     x.textContent = b.x;
     col.append(bar, x);
     el.appendChild(col);
-  }
+  });
+  bucketCount = buckets.length;
+  applySelectionVisual();
 }
 
 function renderDonut(agg) {
@@ -265,11 +286,14 @@ function renderDonut(agg) {
 }
 
 function renderSites(agg) {
-  const el = document.getElementById("sites");
-  const entries = Object.entries(agg.perHost).sort((a, b) => b[1] - a[1]).slice(0, 25);
+  fillSites(document.getElementById("sites"), agg.perHost, "No sites tracked in this period.");
+}
+
+function fillSites(el, perHost, emptyMsg) {
+  const entries = Object.entries(perHost).sort((a, b) => b[1] - a[1]).slice(0, 25);
   el.innerHTML = "";
   if (!entries.length) {
-    el.innerHTML = `<li class="empty">No sites tracked in this period.</li>`;
+    el.innerHTML = `<li class="empty">${emptyMsg}</li>`;
     return;
   }
   const max = entries[0][1];
@@ -323,19 +347,22 @@ function renderSites(agg) {
 }
 
 function renderCatList(agg) {
-  const el = document.getElementById("catlist");
+  fillCats(document.getElementById("catlist"), agg.perCat, agg.total, "No categories yet.");
+}
+
+function fillCats(el, perCat, total, emptyMsg) {
   const cats = CATEGORY_ORDER
-    .map((c) => [c, agg.perCat[c] || 0])
+    .map((c) => [c, perCat[c] || 0])
     .filter(([, v]) => v > 0)
     .sort((a, b) => b[1] - a[1]);
   el.innerHTML = "";
   if (!cats.length) {
-    el.innerHTML = `<li class="empty">No categories yet.</li>`;
+    el.innerHTML = `<li class="empty">${emptyMsg}</li>`;
     return;
   }
   const max = cats[0][1];
   for (const [cat, val] of cats) {
-    const pct = agg.total ? Math.round((val / agg.total) * 100) : 0;
+    const pct = total ? Math.round((val / total) * 100) : 0;
     const li = document.createElement("li");
     li.innerHTML =
       `<div class="cat-top">` +
@@ -347,6 +374,150 @@ function renderCatList(agg) {
   }
 }
 
+// ---- interval selection ----------------------------------------------------
+
+let bucketCount = 0;
+
+function bucketLabel(i) {
+  if (period === "day") return `${String(i).padStart(2, "0")}:00`;
+  if (period === "week") return DOW[i];
+  return MONTHS[i];
+}
+
+function selectionTitle(a, b) {
+  if (period === "day") {
+    return `${String(a).padStart(2, "0")}:00 – ${String(b + 1).padStart(2, "0")}:00`;
+  }
+  if (period === "week") return a === b ? DOW[a] : `${DOW[a]} – ${DOW[b]}`;
+  return a === b ? MONTHS[a] : `${MONTHS[a]} – ${MONTHS[b]}`;
+}
+
+// Per-host seconds within the currently selected bucket range.
+function sitesForSelection() {
+  const perHost = {};
+  if (selStart == null) return perHost;
+  const a = Math.min(selStart, selEnd);
+  const b = Math.max(selStart, selEnd);
+
+  if (period === "day") {
+    const h = HOURS[keyOf(anchor)];
+    // Only the per-host hourly map can be attributed to real sites. A legacy
+    // bare [24] array (or the synthetic "(earlier)" bucket) has no host info,
+    // so it is left out here and surfaced as the reconciling remainder in
+    // renderSelection() instead of masquerading as a website.
+    if (h && !Array.isArray(h)) {
+      for (const [host, arr] of Object.entries(h)) {
+        if (host === "(earlier)") continue;
+        let s = 0;
+        for (let i = a; i <= b; i++) s += arr[i] || 0;
+        if (s > 0) perHost[host] = (perHost[host] || 0) + s;
+      }
+    }
+  } else if (period === "week") {
+    const s = startOfWeek(anchor);
+    for (let i = a; i <= b; i++) {
+      const d = new Date(s); d.setDate(s.getDate() + i);
+      const day = DATA[keyOf(d)];
+      if (day) for (const [host, sec] of Object.entries(day)) perHost[host] = (perHost[host] || 0) + sec;
+    }
+  } else {
+    const y = anchor.getFullYear();
+    for (const [k, day] of Object.entries(DATA)) {
+      const d = parseKey(k);
+      if (d.getFullYear() !== y) continue;
+      const m = d.getMonth();
+      if (m >= a && m <= b) {
+        for (const [host, sec] of Object.entries(day)) perHost[host] = (perHost[host] || 0) + sec;
+      }
+    }
+  }
+  return perHost;
+}
+
+// True total seconds across the selected bucket range — including legacy day
+// data that has no per-site detail. Used to reconcile the interval total so
+// the number always matches the chart bars.
+function intervalTotalSeconds() {
+  if (selStart == null) return 0;
+  const a = Math.min(selStart, selEnd);
+  const b = Math.max(selStart, selEnd);
+  if (period === "day") {
+    const arr = hourlyArray(keyOf(anchor));
+    let s = 0;
+    for (let i = a; i <= b; i++) s += arr[i] || 0;
+    return s;
+  }
+  // For week/year, every host is attributed, so this equals the host sum.
+  return Object.values(sitesForSelection()).reduce((s, v) => s + v, 0);
+}
+
+function applySelectionVisual() {
+  const chart = document.getElementById("bar-chart");
+  const active = selStart != null;
+  chart.classList.toggle("has-selection", active);
+  const a = active ? Math.min(selStart, selEnd) : -1;
+  const b = active ? Math.max(selStart, selEnd) : -1;
+  chart.querySelectorAll(".bar-col").forEach((col) => {
+    const i = +col.dataset.index;
+    col.querySelector(".bar").classList.toggle("sel", active && i >= a && i <= b);
+  });
+}
+
+function renderRangeTools() {
+  const from = document.getElementById("sel-from");
+  const to = document.getElementById("sel-to");
+  const opts = ['<option value="">—</option>'];
+  for (let i = 0; i < bucketCount; i++) opts.push(`<option value="${i}">${bucketLabel(i)}</option>`);
+  from.innerHTML = opts.join("");
+  to.innerHTML = opts.join("");
+  from.value = selStart == null ? "" : String(selStart);
+  to.value = selEnd == null ? "" : String(selEnd);
+}
+
+function renderSelection() {
+  const section = document.getElementById("selection-section");
+  if (selStart == null) { section.hidden = true; return; }
+
+  const a = Math.min(selStart, selEnd);
+  const b = Math.max(selStart, selEnd);
+  const perHost = sitesForSelection();
+  const attributed = Object.values(perHost).reduce((s, v) => s + v, 0);
+  const total = intervalTotalSeconds();
+  const gap = Math.max(0, total - attributed); // legacy time with no host detail
+  const perCat = {};
+  for (const [host, sec] of Object.entries(perHost)) {
+    const c = categoryOf(host, OVERRIDES);
+    perCat[c] = (perCat[c] || 0) + sec;
+  }
+
+  document.getElementById("sel-title").textContent = `Interval · ${selectionTitle(a, b)}`;
+  document.getElementById("sel-total").textContent = `${formatDur(total)} total`;
+
+  const sitesEl = document.getElementById("sel-sites");
+  if (Object.keys(perHost).length) fillSites(sitesEl, perHost, "");
+  else sitesEl.innerHTML = "";
+  // Reconcile any time recorded before per-site hourly tracking existed.
+  if (gap > 0) {
+    const li = document.createElement("li");
+    li.innerHTML =
+      `<div class="rank"></div>` +
+      `<div class="site-main"><div class="site-host muted">Earlier activity · no per-site detail</div></div>` +
+      `<div class="site-time">${formatDur(gap)}</div>`;
+    sitesEl.appendChild(li);
+  }
+  if (!sitesEl.children.length) sitesEl.innerHTML = `<li class="empty">No activity in this interval.</li>`;
+
+  fillCats(document.getElementById("sel-catlist"), perCat, attributed, "No per-site detail for this interval.");
+  section.hidden = false;
+}
+
+function clearSelection() {
+  selStart = selEnd = null;
+  applySelectionVisual();
+  renderRangeTools();
+  renderSelection();
+}
+
 function render() {
   const agg = aggregate();
   renderRangeLabel();
@@ -355,6 +526,8 @@ function render() {
   renderDonut(agg);
   renderSites(agg);
   renderCatList(agg);
+  renderRangeTools();
+  renderSelection();
 }
 
 // ---- controls --------------------------------------------------------------
@@ -365,6 +538,7 @@ function shiftAnchor(dir) {
   else if (period === "week") d.setDate(d.getDate() + 7 * dir);
   else d.setFullYear(d.getFullYear() + dir);
   anchor = d;
+  selStart = selEnd = null; // bucket indices no longer map to the new range
   render();
 }
 
@@ -372,12 +546,64 @@ document.getElementById("period-seg").addEventListener("click", (e) => {
   const btn = e.target.closest("button[data-period]");
   if (!btn) return;
   period = btn.dataset.period;
+  selStart = selEnd = null;
   document.querySelectorAll("#period-seg button").forEach((b) => b.classList.toggle("active", b === btn));
   render();
 });
 document.getElementById("prev").addEventListener("click", () => shiftAnchor(-1));
 document.getElementById("next").addEventListener("click", () => shiftAnchor(1));
-document.getElementById("today-btn").addEventListener("click", () => { anchor = new Date(); render(); });
+document.getElementById("today-btn").addEventListener("click", () => {
+  anchor = new Date();
+  selStart = selEnd = null;
+  render();
+});
+
+// Drag (or click) across the trend bars to select an interval.
+const chartEl = document.getElementById("bar-chart");
+chartEl.addEventListener("mousedown", (e) => {
+  const col = e.target.closest(".bar-col");
+  if (!col) return;
+  e.preventDefault();
+  const i = +col.dataset.index;
+  // Click the lone selected bar again to deselect it.
+  if (selStart != null && selStart === selEnd && selStart === i) {
+    clearSelection();
+    return;
+  }
+  dragging = true;
+  selStart = selEnd = i;
+  applySelectionVisual();
+});
+chartEl.addEventListener("mouseover", (e) => {
+  if (!dragging) return;
+  const col = e.target.closest(".bar-col");
+  if (!col) return;
+  selEnd = +col.dataset.index;
+  applySelectionVisual();
+});
+document.addEventListener("mouseup", () => {
+  if (!dragging) return;
+  dragging = false;
+  renderRangeTools();
+  renderSelection();
+});
+
+// Manual interval pickers.
+document.getElementById("sel-from").addEventListener("change", (e) => {
+  if (e.target.value === "") { clearSelection(); return; }
+  selStart = +e.target.value;
+  if (selEnd == null) selEnd = selStart;
+  applySelectionVisual();
+  renderSelection();
+});
+document.getElementById("sel-to").addEventListener("change", (e) => {
+  if (e.target.value === "") { clearSelection(); return; }
+  selEnd = +e.target.value;
+  if (selStart == null) selStart = selEnd;
+  applySelectionVisual();
+  renderSelection();
+});
+document.getElementById("sel-clear").addEventListener("click", clearSelection);
 
 document.getElementById("export").addEventListener("click", async () => {
   const all = await chrome.storage.local.get(["data", "hours", "categories"]);

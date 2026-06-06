@@ -169,6 +169,36 @@ body {
 }
 .bar-x { font-size: 10px; color: var(--muted); white-space: nowrap; }
 
+/* Bars become clickable/drag-selectable */
+.chart .bar-col { cursor: pointer; }
+.chart.has-selection { user-select: none; }
+.chart.has-selection .bar { opacity: 0.3; }
+.chart.has-selection .bar.sel { opacity: 1; }
+.chart .bar.sel { background: var(--accent); box-shadow: 0 0 0 2px rgba(79, 140, 255, 0.25); }
+
+/* Interval picker under the chart */
+.range-tools {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+  font-size: 12px;
+  flex-wrap: wrap;
+}
+.range-tools select {
+  font-size: 12px;
+  padding: 4px 7px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--panel);
+  color: var(--fg);
+}
+.range-tools .arrow { color: var(--muted); }
+.range-tools .hint { margin-left: auto; }
+.ghost.sm { padding: 4px 10px; font-size: 12px; }
+
 /* Donut */
 .donut-row { display: flex; align-items: center; gap: 18px; }
 .donut {

@@ -40,6 +40,14 @@
             <span class="muted" id="trend-sub"></span>
           </div>
           <div class="chart" id="bar-chart"></div>
+          <div class="range-tools">
+            <span class="muted">Interval</span>
+            <select id="sel-from" title="Start of interval"></select>
+            <span class="arrow">→</span>
+            <select id="sel-to" title="End of interval"></select>
+            <button id="sel-clear" class="ghost sm">Clear</button>
+            <span class="muted hint" id="sel-hint">tip: drag across the bars</span>
+          </div>
         </div>
 
         <div class="panel">
@@ -48,6 +56,21 @@
             <div class="donut" id="donut"></div>
             <ul class="legend" id="legend"></ul>
           </div>
+        </div>
+      </section>
+
+      <!-- Selected-interval detail (hidden until a selection is made) -->
+      <section class="grid" id="selection-section" hidden>
+        <div class="panel">
+          <div class="panel-head">
+            <h2 id="sel-title">Selected interval</h2>
+            <span class="muted" id="sel-total"></span>
+          </div>
+          <ul class="sites" id="sel-sites"></ul>
+        </div>
+        <div class="panel">
+          <div class="panel-head"><h2>Categories in interval</h2></div>
+          <ul class="catlist" id="sel-catlist"></ul>
         </div>
       </section>
 

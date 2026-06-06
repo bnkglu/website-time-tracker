@@ -62,12 +62,21 @@ async function flush() {
     if (!store[day]) store[day] = {};
     store[day][session.host] = (store[day][session.host] || 0) + elapsedSec;
 
-    // Per-day, 24-slot hourly activity (for the day view chart). We attribute
-    // the whole flush to the current hour; flushes happen <=30s apart so the
-    // boundary error is negligible.
+    // Per-day, per-host, 24-slot hourly activity (powers the day-view chart and
+    // hour-interval drill-down). We attribute the whole flush to the current
+    // hour; flushes happen <=30s apart so the boundary error is negligible.
     const hourStore = hours || {};
-    if (!hourStore[day]) hourStore[day] = new Array(24).fill(0);
-    hourStore[day][new Date().getHours()] += elapsedSec;
+    let dayHours = hourStore[day];
+    // Migrate the old shape (a bare 24-int array) into the new {host:[24]} map,
+    // preserving past totals under a synthetic "(earlier)" key.
+    if (Array.isArray(dayHours)) {
+      dayHours = { "(earlier)": dayHours };
+    } else if (!dayHours) {
+      dayHours = {};
+    }
+    if (!dayHours[session.host]) dayHours[session.host] = new Array(24).fill(0);
+    dayHours[session.host][new Date().getHours()] += elapsedSec;
+    hourStore[day] = dayHours;
 
     await chrome.storage.local.set({ data: store, hours: hourStore });
   }
