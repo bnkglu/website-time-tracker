@@ -263,6 +263,10 @@ body {
 
 .empty { color: var(--muted); text-align: center; padding: 28px 0; }
 
+/* The [hidden] attribute must beat `.grid { display: grid }`, otherwise the
+   selection panel never actually hides when the interval is cleared. */
+.grid[hidden] { display: none; }
+
 /* Footer */
 .footer {
   display: flex; align-items: center; gap: 12px;
