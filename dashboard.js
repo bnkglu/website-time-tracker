@@ -6,6 +6,16 @@ let DATA = {};        // { "YYYY-MM-DD": { host: seconds } }
 let HOURS = {};       // { "YYYY-MM-DD": [24 ints] }
 let OVERRIDES = {};   // { host: category }
 
+// Category lookups are pure for a given (host, overrides). The year view asks
+// for the same hosts thousands of times per render, so memoize within a render
+// pass (cache is cleared at the top of render()).
+let _catCache = new Map();
+function catOf(host) {
+  let c = _catCache.get(host);
+  if (c === undefined) { c = categoryOf(host, OVERRIDES); _catCache.set(host, c); }
+  return c;
+}
+
 let period = "day";   // "day" | "week" | "year"
 let anchor = new Date();
 
@@ -97,7 +107,7 @@ function aggregate() {
     let dayTotal = 0;
     for (const [host, sec] of Object.entries(day)) {
       perHost[host] = (perHost[host] || 0) + sec;
-      const cat = categoryOf(host, OVERRIDES);
+      const cat = catOf(host);
       perCat[cat] = (perCat[cat] || 0) + sec;
       dayTotal += sec;
     }
@@ -232,7 +242,9 @@ function renderBarChart(agg) {
     bar.className = "bar";
     bar.style.height = `${(b.value / max) * 100}%`;
     bar.dataset.label = b.label;
-    if (b.value === 0) bar.style.background = "var(--track)";
+    // Empty buckets render nothing (no stray baseline dash); a continuous axis
+    // line under the chart provides the baseline instead.
+    if (b.value === 0) { bar.style.background = "transparent"; bar.style.minHeight = "0"; }
     const x = document.createElement("div");
     x.className = "bar-x";
     x.textContent = b.x;
@@ -298,7 +310,7 @@ function fillSites(el, perHost, emptyMsg) {
   }
   const max = entries[0][1];
   entries.forEach(([host, sec], i) => {
-    const cat = categoryOf(host, OVERRIDES);
+    const cat = catOf(host);
     const li = document.createElement("li");
 
     const rank = document.createElement("div");
@@ -347,10 +359,12 @@ function fillSites(el, perHost, emptyMsg) {
 }
 
 function renderCatList(agg) {
-  fillCats(document.getElementById("catlist"), agg.perCat, agg.total, "No categories yet.");
+  fillCats(document.getElementById("catlist"), agg.perCat, agg.total, "No categories yet.", agg.perHost);
 }
 
-function fillCats(el, perCat, total, emptyMsg) {
+// `perHost` is optional; when given, each category row can be clicked to expand
+// and reveal the individual sites that make up that category.
+function fillCats(el, perCat, total, emptyMsg, perHost) {
   const cats = CATEGORY_ORDER
     .map((c) => [c, perCat[c] || 0])
     .filter(([, v]) => v > 0)
@@ -360,16 +374,52 @@ function fillCats(el, perCat, total, emptyMsg) {
     el.innerHTML = `<li class="empty">${emptyMsg}</li>`;
     return;
   }
+
+  // Group the sites under their category once, sorted by time desc.
+  const sitesByCat = {};
+  if (perHost) {
+    for (const [host, sec] of Object.entries(perHost)) {
+      const c = catOf(host);
+      (sitesByCat[c] || (sitesByCat[c] = [])).push([host, sec]);
+    }
+    for (const c of Object.keys(sitesByCat)) sitesByCat[c].sort((a, b) => b[1] - a[1]);
+  }
+
   const max = cats[0][1];
   for (const [cat, val] of cats) {
     const pct = total ? Math.round((val / total) * 100) : 0;
+    const sites = sitesByCat[cat] || [];
+    const expandable = sites.length > 0;
+
     const li = document.createElement("li");
+    li.className = "cat-row";
     li.innerHTML =
-      `<div class="cat-top">` +
-        `<span class="cat-name"><span class="dot" style="width:10px;height:10px;border-radius:3px;background:${colorOf(cat)}"></span>${cat}</span>` +
+      `<div class="cat-top${expandable ? " clickable" : ""}">` +
+        `<span class="cat-name">` +
+          `<span class="caret">${expandable ? "▸" : ""}</span>` +
+          `<span class="dot" style="width:10px;height:10px;border-radius:3px;background:${colorOf(cat)}"></span>${cat}` +
+        `</span>` +
         `<span class="cat-meta">${formatDur(val)} · ${pct}%</span>` +
       `</div>` +
       `<div class="cat-track"><div class="cat-fill" style="width:${(val / max) * 100}%;background:${colorOf(cat)}"></div></div>`;
+
+    if (expandable) {
+      const sub = document.createElement("ul");
+      sub.className = "cat-sites";
+      sub.hidden = true;
+      for (const [host, sec] of sites) {
+        const sli = document.createElement("li");
+        sli.innerHTML =
+          `<span class="cs-host" title="${host}">${host}</span>` +
+          `<span class="cs-time">${formatDur(sec)}</span>`;
+        sub.appendChild(sli);
+      }
+      li.appendChild(sub);
+      li.querySelector(".cat-top").addEventListener("click", () => {
+        sub.hidden = !sub.hidden;
+        li.querySelector(".caret").textContent = sub.hidden ? "▸" : "▾";
+      });
+    }
     el.appendChild(li);
   }
 }
@@ -486,7 +536,7 @@ function renderSelection() {
   const gap = Math.max(0, total - attributed); // legacy time with no host detail
   const perCat = {};
   for (const [host, sec] of Object.entries(perHost)) {
-    const c = categoryOf(host, OVERRIDES);
+    const c = catOf(host);
     perCat[c] = (perCat[c] || 0) + sec;
   }
 
@@ -507,7 +557,7 @@ function renderSelection() {
   }
   if (!sitesEl.children.length) sitesEl.innerHTML = `<li class="empty">No activity in this interval.</li>`;
 
-  fillCats(document.getElementById("sel-catlist"), perCat, attributed, "No per-site detail for this interval.");
+  fillCats(document.getElementById("sel-catlist"), perCat, attributed, "No per-site detail for this interval.", perHost);
   section.hidden = false;
 }
 
@@ -519,6 +569,7 @@ function clearSelection() {
 }
 
 function render() {
+  _catCache.clear();
   const agg = aggregate();
   renderRangeLabel();
   renderCards(agg);
@@ -633,11 +684,23 @@ document.getElementById("reset-all").addEventListener("click", async () => {
   render();
 })();
 
-// Live-update if tracking writes while the dashboard is open.
+// Live-update if tracking writes while the dashboard is open. Tracking flushes
+// every ~30s, so debounce bursts and skip re-rendering a hidden tab (re-render
+// once when it becomes visible again) to avoid wasted work as data grows.
+let _renderTimer = null;
+let _pendingChange = false;
+function scheduleRender() {
+  if (document.hidden) { _pendingChange = true; return; }
+  clearTimeout(_renderTimer);
+  _renderTimer = setTimeout(render, 200);
+}
 chrome.storage.onChanged.addListener((changes, area) => {
   if (area !== "local") return;
   if (changes.data) DATA = changes.data.newValue || {};
   if (changes.hours) HOURS = changes.hours.newValue || {};
   if (changes.categories) OVERRIDES = changes.categories.newValue || {};
-  render();
+  scheduleRender();
+});
+document.addEventListener("visibilitychange", () => {
+  if (!document.hidden && _pendingChange) { _pendingChange = false; render(); }
 });

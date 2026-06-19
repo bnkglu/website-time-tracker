@@ -133,6 +133,17 @@ body {
   height: 180px;
   padding-top: 8px;
 }
+/* Continuous baseline so empty hours don't need stray dashes. The label row
+   (.bar-x) sits below this line, inside each column. */
+.bar-col { position: relative; }
+.bar-col::before {
+  content: "";
+  position: absolute;
+  left: -2px; right: -2px;
+  bottom: 18px; /* just above the label row */
+  height: 1px;
+  background: var(--border);
+}
 .bar-col {
   flex: 1 1 0;
   display: flex;
@@ -167,7 +178,16 @@ body {
   margin-bottom: 4px;
   z-index: 5;
 }
-.bar-x { font-size: 10px; color: var(--muted); white-space: nowrap; }
+.bar-x {
+  width: 100%;
+  text-align: center;
+  font-size: 10px;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: visible;
+  height: 12px;
+  line-height: 12px;
+}
 
 /* Bars become clickable/drag-selectable */
 .chart .bar-col { cursor: pointer; }
@@ -260,6 +280,18 @@ body {
 .cat-track { height: 8px; background: var(--track); border-radius: 4px; overflow: hidden; }
 .cat-fill { height: 100%; border-radius: 4px; }
 .cat-meta { color: var(--muted); font-variant-numeric: tabular-nums; }
+
+/* Expandable category rows -> the sites inside each category */
+.cat-top.clickable { cursor: pointer; }
+.cat-top.clickable:hover .cat-name { color: var(--accent); }
+.caret { display: inline-block; width: 11px; font-size: 9px; color: var(--muted); }
+.cat-sites { list-style: none; margin: 8px 0 2px; padding: 0 0 0 19px; }
+.cat-sites li {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  padding: 4px 0; border: 0; font-size: 13px;
+}
+.cat-sites .cs-host { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cat-sites .cs-time { color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
 
 .empty { color: var(--muted); text-align: center; padding: 28px 0; }
 

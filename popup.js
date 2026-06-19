@@ -32,11 +32,13 @@ const selectEl = document.getElementById("day-select");
 const resetBtn = document.getElementById("reset");
 
 let OVERRIDES = {};
+let DATA_CACHE = null; // reuse across day-picker changes instead of re-reading
 
 async function getData() {
   const { data, categories } = await chrome.storage.local.get(["data", "categories"]);
   OVERRIDES = categories || {};
-  return data || {};
+  DATA_CACHE = data || {};
+  return DATA_CACHE;
 }
 
 function render(dayData) {
@@ -56,6 +58,7 @@ function render(dayData) {
     return;
   }
 
+  const frag = document.createDocumentFragment();
   for (const [host, sec] of entries) {
     const li = document.createElement("li");
 
@@ -89,8 +92,9 @@ function render(dayData) {
     track.appendChild(fill);
 
     li.append(top, track);
-    listEl.appendChild(li);
+    frag.appendChild(li);
   }
+  listEl.appendChild(frag);
 }
 
 async function refresh() {
@@ -113,9 +117,9 @@ async function refresh() {
   render(data[selectEl.value] || {});
 }
 
-selectEl.addEventListener("change", async () => {
-  const data = await getData();
-  render(data[selectEl.value] || {});
+selectEl.addEventListener("change", () => {
+  // Use the data already loaded on open — no extra storage round-trip.
+  render((DATA_CACHE || {})[selectEl.value] || {});
 });
 
 resetBtn.addEventListener("click", async () => {
